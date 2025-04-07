@@ -6,6 +6,7 @@ use App\Services\BookService;
 use App\Services\ViewService;
 use App\Services\ErrorHandlingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class BookController extends Controller
 {
@@ -77,11 +78,32 @@ class BookController extends Controller
     public function purchase(Request $request, $id)
     {
         try {
-            $this->bookService->processPurchase($request, $id);
+            $purchaseResult = $this->bookService->processPurchase($request, $id);
+
+            if (isset($purchaseResult['status']) && $purchaseResult['status'] === 'success') {
+                $quantity = $request->input('quantity', 1);
+                $saleData = $purchaseResult['data'] ?? [];
+                $purchaseId = $saleData['sale_id'] ?? 'N/A';
+
+                $message = "Книга успешно куплена! ";
+                $message .= "Количество: {$quantity}. ";
+                $message .= "Номер заказа: {$purchaseId}";
+
+                return redirect()->route('books.show', $id)
+                    ->with('success', $message);
+            }
+
 
             return redirect()->route('books.show', $id)
-                ->with('success', 'Книга успешно куплена!');
+                ->with('warning', 'Покупка не была завершена. Пожалуйста, попробуйте позже.');
+
         } catch (\Exception $e) {
+            // Логируем ошибку
+            Log::error('Ошибка при покупке книги в контроллере', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             $this->errorService->logException($e, 'books-purchase');
             return $this->errorService->handleExceptionWithRedirectBack($e);
         }

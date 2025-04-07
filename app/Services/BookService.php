@@ -2,7 +2,10 @@
 
 namespace App\Services;
 
+use App\Events\BookPurchased;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class BookService extends ApiService
 {
@@ -110,9 +113,53 @@ class BookService extends ApiService
      */
     public function processPurchase(Request $request, int $bookId): array
     {
-        $userId = auth()->id() ?? $request->input('user_id', 1);
-        $quantity = $request->input('quantity', 1);
+        try {
+            $userId = auth()->id() ?? $request->input('user_id', 1);
+            $quantity = $request->input('quantity', 1);
+            $bookDetails = $this->getBookDetails($bookId);
+            $purchaseResult = $this->purchaseBook($bookId, $userId, $quantity);
 
-        return $this->purchaseBook($bookId, $userId, $quantity);
+
+            if (isset($purchaseResult['status']) && $purchaseResult['status'] === 'success') {
+                $user = Auth::user();
+
+                $saleData = $purchaseResult['data'] ?? [];
+                $saleId = $saleData['sale_id'] ?? rand(1000, 9999);
+                $bookTitle = $saleData['book']['title'] ?? $bookDetails['data']['title'] ?? 'Неизвестная книга';
+                $bookPrice = $saleData['book']['price'] ?? $bookDetails['data']['price'] ?? 0;
+                $totalPrice = $saleData['total_price'] ?? ($bookPrice * $quantity);
+
+                $purchaseData = [
+                    'id' => $saleId,
+                    'book_id' => $bookId,
+                    'book_title' => $bookTitle,
+                    'user_id' => $userId,
+                    'user_name' => $user ? $user->name : 'Гость',
+                    'quantity' => $quantity,
+                    'price' => $bookPrice,
+                    'total_price' => $totalPrice,
+                    'purchased_at' => now()->format('Y-m-d H:i:s')
+                ];
+                try {
+                    event(new BookPurchased($purchaseData));
+                } catch (\Exception $e) {
+                    Log::error('Ошибка при отправке события BookPurchased', [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            } else {
+                Log::warning('Покупка не была успешной, событие не отправлено', [
+                    'result' => $purchaseResult
+                ]);
+            }
+            return $purchaseResult;
+        } catch (\Exception $e) {
+            Log::error('Ошибка в процессе покупки книги', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
+        }
     }
 }
