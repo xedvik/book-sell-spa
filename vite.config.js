@@ -5,11 +5,18 @@ export default defineConfig({
     server: {
         host: '0.0.0.0',
         hmr: {
-            host: 'localhost'
+            host: 'localhost',
+            protocol: 'ws',
+            clientPort: 5174
+        },
+        watch: {
+            usePolling: true,
+            interval: 1000,
         },
         cors: {
             origin: '*'
-        }
+        },
+        strictPort: false
     },
     plugins: [
         laravel({
